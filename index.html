@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>APP SCORE Selección de AV</title>
+
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Config Tailwind con paleta basada en logo RBmind -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        rbcyan: {
+                            DEFAULT: "#6FC9F5", // celeste RBmind (contorno y texto)
+                            light: "#C4F1FF",
+                            dark: "#1F8ACB",
+                        },
+                        rbmagenta: {
+                            DEFAULT: "#B43EC0", // violeta/magenta del colibrí
+                            light: "#F5D0FF",
+                            dark: "#8B1FA3",
+                        },
+                    },
+                },
+            },
+        };
+    </script>
+
+    <!-- React -->
+    <script
+        crossorigin
+        src="https://unpkg.com/react@18/umd/react.production.min.js"
+    ></script>
+    <script
+        crossorigin
+        src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"
+    ></script>
+
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Lucide -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body {
+            -webkit-tap-highlight-color: transparent;
+        }
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .animate-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- ICONOS ---
+        const Icon = ({ name, size = 20, className = "" }) => {
+            useEffect(() => {
+                lucide.createIcons();
+            }, [name]);
+            return (
+                <i
+                    data-lucide={name}
+                    width={size}
+                    height={size}
+                    className={className}
+                ></i>
+            );
+        };
+
+        // --- MOTOR DE DECISIÓN ---
+        const calcularScoreDIVA = (criterios) => {
+            let score = 0;
+            if (criterios.flebitis) score += 1;
+            if (criterios.dificultad) score += 1;
+            if (criterios.noPalpable) score += 1;
+            if (criterios.noVisible) score += 1;
+            if (criterios.venaPequena) score += 1;
+            return score;
+        };
+
+        const obtenerPuntos = (divaScore, esFlebitico, duracionStr) => {
+            const ptsDiva = divaScore;
+            const ptsMed = esFlebitico ? 4 : 2;
+            let ptsTime = 0;
+
+            if (duracionStr === "0-2") ptsTime = 0;
+            if (duracionStr === "3-6") ptsTime = 1;
+            if (duracionStr === "7-14") ptsTime = 2;
+            if (duracionStr === ">14") ptsTime = 4;
+
+            const total = ptsDiva + ptsMed + ptsTime;
+            return { total, ptsDiva, ptsMed, ptsTime };
+        };
+
+        const obtenerRecomendacion = (scores, esFlebitico, duracionStr) => {
+            const { total } = scores;
+
+            // Regla dura por duración > 14 días
+            if (duracionStr === ">14") {
+                return {
+                    dispositivo: "PICC",
+                    tipo: "Acceso Central",
+                    color: "bg-rbcyan-light text-rbcyan-dark border-rbcyan",
+                    razon: "Duración > 14 días requiere acceso central.",
+                };
+            }
+
+            // Fármaco flebítico / vesicante
+            if (esFlebitico) {
+                if (duracionStr === "0-2" || duracionStr === "3-6") {
+                    return {
+                        dispositivo: "CVC",
+                        tipo: "Catéter Venoso Central",
+                        color: "bg-red-100 text-red-800 border-red-200",
+                        razon:
+                            "Fármaco irritante en corto plazo: riesgo alto para vena periférica.",
+                    };
+                }
+                if (duracionStr === "7-14") {
+                    return {
+                        dispositivo: "PICC",
+                        tipo: "Central Inserción Periférica",
+                        color:
+                            "bg-rbmagenta-light text-rbmagenta-dark border-rbmagenta",
+                        razon:
+                            "Fármaco irritante + tratamiento mediano: se recomienda PICC.",
+                    };
+                }
+            }
+
+            // 7-14 días sin ser flebítico
+            if (duracionStr === "7-14") {
+                if (total >= 5) {
+                    return {
+                        dispositivo: "MIDLINE / PICC",
+                        tipo: "Evaluar capital venoso",
+                        color:
+                            "bg-rbmagenta-light text-rbmagenta-dark border-rbmagenta",
+                        razon:
+                            "Tratamiento intermedio con riesgo: evaluar MIDLINE vs PICC según recursos.",
+                    };
+                }
+                return {
+                    dispositivo: "MIDLINE",
+                    tipo: "Acceso periférico extendido",
+                    color:
+                        "bg-rbcyan-light text-rbcyan-dark border-rbcyan-light",
+                    razon: "Duración intermedia con riesgo moderado.",
+                };
+            }
+
+            // 3-6 días
+            if (duracionStr === "3-6") {
+                if (scores.ptsDiva >= 2) {
+                    return {
+                        dispositivo: "MIDLINE",
+                        tipo: "Preservación venosa",
+                        color:
+                            "bg-rbcyan-light text-rbcyan-dark border-rbcyan-light",
+                        razon:
+                            "Paciente DIVA: se sugiere MIDLINE para preservar capital venoso.",
+                    };
+                }
+                return {
+                    dispositivo: "VVP",
+                    tipo: "Vía venosa periférica",
+                    color:
+                        "bg-rbcyan-light text-rbcyan-dark border-rbcyan-light",
+                    razon: "Tratamiento corto estándar.",
+                };
+            }
+
+            // 0-2 días
+            if (duracionStr === "0-2") {
+                if (scores.ptsDiva > 0) {
+                    return {
+                        dispositivo: "ECO VVP",
+                        tipo: "VVP guiada por ecografía",
+                        color:
+                            "bg-rbmagenta-light text-rbmagenta-dark border-rbmagenta-light",
+                        razon:
+                            "Dificultad para canulación: use guía ecográfica.",
+                    };
+                }
+                return {
+                    dispositivo: "VVP",
+                    tipo: "Vía venosa periférica",
+                    color:
+                        "bg-rbcyan-light text-rbcyan-dark border-rbcyan-light",
+                    razon: "Acceso estándar de corto plazo (0–2 días).",
+                };
+            }
+
+            return {
+                dispositivo: "Evaluar",
+                tipo: "Indeterminado",
+                color: "bg-gray-100 text-slate-700 border-slate-200",
+                razon: "Faltan datos para entregar una recomendación.",
+            };
+        };
+
+        // Checkbox card reutilizable
+        const CheckboxCard = ({ label, name, checked, onChange, icon }) => (
+            <label
+                className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
+                    checked
+                        ? "bg-rbcyan-light border-rbcyan ring-1 ring-rbcyan"
+                        : "bg-white border-slate-200"
+                }`}
+            >
+                <div
+                    className={`w-5 h-5 rounded border flex items-center justify-center mr-3 ${
+                        checked
+                            ? "bg-rbcyan border-rbcyan"
+                            : "bg-white border-slate-300"
+                    }`}
+                >
+                    {checked && (
+                        <Icon
+                            name="check"
+                            size={14}
+                            className="text-white"
+                        />
+                    )}
+                </div>
+                <span className="flex-1 text-sm font-medium text-slate-700">
+                    {label}
+                </span>
+                {icon && (
+                    <Icon name={icon} size={18} className="text-slate-400" />
+                )}
+                <input
+                    type="checkbox"
+                    name={name}
+                    checked={checked}
+                    onChange={onChange}
+                    className="hidden"
+                />
+            </label>
+        );
+
+        // --- APP PRINCIPAL ---
+        const App = () => {
+            const [vista, setVista] = useState("formulario");
+            const [paciente, setPaciente] = useState({
+                edad: "",
+                diva: {
+                    flebitis: false,
+                    dificultad: false,
+                    noPalpable: false,
+                    noVisible: false,
+                    venaPequena: false,
+                },
+                esFlebitico: false,
+                duracion: "0-2",
+            });
+            const [resultado, setResultado] = useState(null);
+            const [historial, setHistorial] = useState([]);
+
+            // Cargar historial inicial
+            useEffect(() => {
+                const guardado =
+                    JSON.parse(localStorage.getItem("av_history_v3")) || [];
+                setHistorial(guardado);
+                lucide.createIcons();
+            }, []);
+
+            useEffect(() => {
+                lucide.createIcons();
+            }, [vista, resultado, historial]);
+
+            const handleChange = (e) => {
+                const { name, value, type, checked } = e.target;
+
+                if (name.startsWith("diva.")) {
+                    const field = name.split(".")[1];
+                    setPaciente((prev) => ({
+                        ...prev,
+                        diva: { ...prev.diva, [field]: checked },
+                    }));
+                } else if (name === "esFlebitico") {
+                    setPaciente((prev) => ({
+                        ...prev,
+                        esFlebitico: checked,
+                    }));
+                } else {
+                    setPaciente((prev) => ({
+                        ...prev,
+                        [name]: type === "checkbox" ? checked : value,
+                    }));
+                }
+            };
+
+            const handleCalcular = (e) => {
+                e.preventDefault();
+                const scoreDiva = calcularScoreDIVA(paciente.diva);
+                const scores = obtenerPuntos(
+                    scoreDiva,
+                    paciente.esFlebitico,
+                    paciente.duracion
+                );
+                const recomendacion = obtenerRecomendacion(
+                    scores,
+                    paciente.esFlebitico,
+                    paciente.duracion
+                );
+
+                const res = {
+                    ...recomendacion,
+                    scores,
+                    fecha: new Date().toLocaleDateString(),
+                    paciente: { ...paciente },
+                };
+
+                // guardar automáticamente en historial
+                setHistorial((prev) => {
+                    const nuevo = [res, ...prev];
+                    localStorage.setItem(
+                        "av_history_v3",
+                        JSON.stringify(nuevo)
+                    );
+                    return nuevo;
+                });
+
+                setResultado(res);
+                setVista("resultado");
+            };
+
+            const nuevoCalculo = () => {
+                setPaciente({
+                    edad: "",
+                    diva: {
+                        flebitis: false,
+                        dificultad: false,
+                        noPalpable: false,
+                        noVisible: false,
+                        venaPequena: false,
+                    },
+                    esFlebitico: false,
+                    duracion: "0-2",
+                });
+                setResultado(null);
+                setVista("formulario");
+            };
+
+            const limpiarHistorial = () => {
+                if (confirm("¿Eliminar todo el historial local?")) {
+                    setHistorial([]);
+                    localStorage.removeItem("av_history_v3");
+                }
+            };
+
+            // --- VISTAS ---
+            const Formulario = () => (
+                <form onSubmit={handleCalcular} className="space-y-5 animate-in">
+                    {/* PACIENTE */}
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                        <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
+                            <Icon name="user" size={14} /> Paciente
+                        </h3>
+                        <div className="grid grid-cols-2 gap-3">
+                            {/* RUT/ID eliminado intencionalmente */}
+                            <input
+                                type="number"
+                                name="edad"
+                                value={paciente.edad}
+                                onChange={handleChange}
+                                placeholder="Edad (años)"
+                                className="col-span-2 w-full p-2 text-sm border rounded-lg focus:ring-2 focus:ring-rbcyan outline-none"
+                                min="0"
+                            />
+                        </div>
+                    </div>
+
+                    {/* DIVA */}
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                        <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
+                            <Icon name="activity" size={14} /> Evaluación DIVA
+                        </h3>
+                        <div className="space-y-2">
+                            <CheckboxCard
+                                label="Antecedentes de flebitis"
+                                name="diva.flebitis"
+                                checked={paciente.diva.flebitis}
+                                onChange={handleChange}
+                            />
+                            <CheckboxCard
+                                label="Dificultad previa para canalizar"
+                                name="diva.dificultad"
+                                checked={paciente.diva.dificultad}
+                                onChange={handleChange}
+                            />
+                            <CheckboxCard
+                                label="Vena no palpable"
+                                name="diva.noPalpable"
+                                checked={paciente.diva.noPalpable}
+                                onChange={handleChange}
+                            />
+                            <CheckboxCard
+                                label="Vena no visible"
+                                name="diva.noVisible"
+                                checked={paciente.diva.noVisible}
+                                onChange={handleChange}
+                            />
+                            <CheckboxCard
+                                label="Vena &lt; 3 mm"
+                                name="diva.venaPequena"
+                                checked={paciente.diva.venaPequena}
+                                onChange={handleChange}
+                            />
+                        </div>
+                    </div>
+
+                    {/* TRATAMIENTO */}
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                        <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
+                            <Icon name="syringe" size={14} /> Tratamiento
+                        </h3>
+
+                        {/* Duración */}
+                        <div className="mb-4">
+                            <label className="text-sm font-medium text-slate-700 mb-2 block flex items-center gap-2">
+                                <Icon
+                                    name="clock"
+                                    size={16}
+                                    className="text-slate-400"
+                                />
+                                Duración estimada (días)
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                                {["0-2", "3-6", "7-14", ">14"].map((d) => (
+                                    <button
+                                        key={d}
+                                        type="button"
+                                        onClick={() =>
+                                            setPaciente((p) => ({
+                                                ...p,
+                                                duracion: d,
+                                            }))
+                                        }
+                                        className={`p-2 text-sm rounded-lg border transition ${
+                                            paciente.duracion === d
+                                                ? "bg-rbcyan text-white border-rbcyan shadow-sm"
+                                                : "bg-slate-50 text-slate-700 border-slate-200"
+                                        }`}
+                                    >
+                                        {d === ">14"
+                                            ? "> 14 días"
+                                            : d === "0-2"
+                                            ? "0–2 días"
+                                            : `${d} días`}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Fármaco flebítico / vesicante */}
+                        <div>
+                            <CheckboxCard
+                                label="Fármaco vesicante / irritante (p.ej. quimioterapia, Nutrición PN, pH extremo, osmolaridad alta)"
+                                name="esFlebitico"
+                                checked={paciente.esFlebitico}
+                                onChange={handleChange}
+                                icon="alert-triangle"
+                            />
+                        </div>
+                    </div>
+
+                    {/* BOTONES */}
+                    <div className="flex gap-3 pt-2">
+                        <button
+                            type="submit"
+                            className="flex-1 inline-flex items-center justify-center gap-2 bg-rbcyan hover:bg-rbcyan-dark text-white text-sm font-semibold px-4 py-3 rounded-xl shadow-sm transition"
+                        >
+                            <Icon name="sparkles" size={16} />
+                            Calcular recomendación
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setVista("historial")}
+                            className="inline-flex items-center justify-center gap-1 px-3 py-3 text-xs font-medium rounded-xl border border-slate-300 bg-white text-slate-700"
+                        >
+                            <Icon name="clock-history" size={14} />
+                            Historial
+                        </button>
+                    </div>
+                </form>
+            );
+
+            const VistaResultado = () => {
+                if (!resultado) return null;
+                const {
+                    dispositivo,
+                    tipo,
+                    color,
+                    razon,
+                    scores,
+                    paciente: px,
+                } = resultado;
+
+                return (
+                    <div className="space-y-4 animate-in">
+                        <button
+                            type="button"
+                            onClick={() => setVista("formulario")}
+                            className="inline-flex items-center gap-2 text-xs text-slate-500 hover:text-slate-700 mb-1"
+                        >
+                            <Icon name="arrow-left" size={14} />
+                            Volver al formulario
+                        </button>
+
+                        <div
+                            className={`p-4 rounded-2xl border shadow-sm ${color}`}
+                        >
+                            <p className="text-[10px] font-bold uppercase tracking-widest mb-1">
+                                Dispositivo recomendado
+                            </p>
+                            <h2 className="text-2xl font-black leading-tight mb-1">
+                                {dispositivo}
+                            </h2>
+                            <p className="text-xs font-semibold uppercase tracking-wide opacity-80 mb-2">
+                                {tipo}
+                            </p>
+                            <p className="text-sm opacity-90">{razon}</p>
+                        </div>
+
+                        <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3 shadow-sm">
+                            <h3 className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                                <Icon name="list-ordered" size={14} />
+                                Detalle del Score
+                            </h3>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div className="flex justify-between">
+                                    <span>DIVA (0–5)</span>
+                                    <span className="font-semibold">
+                                        {scores.ptsDiva}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Fármaco</span>
+                                    <span className="font-semibold">
+                                        {scores.ptsMed} pts
+                                    </span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Tiempo</span>
+                                    <span className="font-semibold">
+                                        {scores.ptsTime} pts
+                                    </span>
+                                </div>
+                                <div className="flex justify-between col-span-2 border-t pt-2 mt-1">
+                                    <span className="font-semibold">
+                                        Total Score
+                                    </span>
+                                    <span className="font-bold text-rbcyan-dark">
+                                        {scores.total} pts
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm text-xs space-y-2">
+                            <h3 className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-2">
+                                <Icon name="info" size={14} />
+                                Datos del episodio
+                            </h3>
+                            <p>
+                                <span className="font-semibold">Fecha: </span>
+                                {resultado.fecha}
+                            </p>
+                            <p>
+                                <span className="font-semibold">Edad: </span>
+                                {px.edad || "No registrado"}
+                            </p>
+                            <p>
+                                <span className="font-semibold">
+                                    Duración estimada:{" "}
+                                </span>
+                                {px.duracion === "0-2"
+                                    ? "0–2 días"
+                                    : px.duracion + " días"}
+                            </p>
+                            <p>
+                                <span className="font-semibold">
+                                    Fármaco vesicante:{" "}
+                                </span>
+                                {px.esFlebitico ? "Sí" : "No"}
+                            </p>
+                        </div>
+
+                        <div className="flex gap-3 pt-2">
+                            <button
+                                type="button"
+                                onClick={nuevoCalculo}
+                                className="flex-1 inline-flex items-center justify-center gap-2 text-sm font-medium px-4 py-3 rounded-xl border border-slate-300 bg-white text-slate-800"
+                            >
+                                <Icon name="refresh-ccw" size={16} />
+                                Nuevo cálculo
+                            </button>
+                        </div>
+                    </div>
+                );
+            };
+
+            const VistaHistorial = () => (
+                <div className="space-y-4 animate-in">
+                    <div className="flex items-center justify-between">
+                        <button
+                            type="button"
+                            onClick={() => setVista("formulario")}
+                            className="inline-flex items-center gap-2 text-xs text-slate-500 hover:text-slate-700"
+                        >
+                            <Icon name="arrow-left" size={14} />
+                            Volver
+                        </button>
+                        {historial.length > 0 && (
+                            <button
+                                type="button"
+                                onClick={limpiarHistorial}
+                                className="inline-flex items-center gap-1 text-[11px] text-red-500 hover:text-red-600"
+                            >
+                                <Icon name="trash-2" size={14} />
+                                Limpiar
+                            </button>
+                        )}
+                    </div>
+
+                    <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                        <Icon name="clock-history" size={16} />
+                        Historial local de decisiones
+                    </h2>
+
+                    {historial.length === 0 ? (
+                        <p className="text-xs text-slate-500">
+                            Aún no hay registros guardados. Calcula una
+                            recomendación y se guardará automáticamente aquí.
+                        </p>
+                    ) : (
+                        <div className="space-y-3">
+                            {historial.map((item, idx) => (
+                                <div
+                                    key={idx}
+                                    className="bg-white rounded-xl border border-slate-200 p-3 text-xs shadow-sm"
+                                >
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span className="font-semibold text-slate-800">
+                                            {item.dispositivo}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400">
+                                            {item.fecha}
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-600 mb-1">
+                                        {item.tipo}
+                                    </p>
+                                    <p className="text-[11px] text-slate-600 mb-1">
+                                        <span className="font-semibold">
+                                            Edad:
+                                        </span>{" "}
+                                        {item.paciente.edad || "No registrada"}
+                                        {" · "}
+                                        <span className="font-semibold">
+                                            Duración:
+                                        </span>{" "}
+                                        {item.paciente.duracion === "0-2"
+                                            ? "0–2 días"
+                                            : item.paciente.duracion + " días"}
+                                    </p>
+                                    <p className="text-[11px] text-slate-600 mb-1">
+                                        <span className="font-semibold">
+                                            Fármaco vesicante:
+                                        </span>{" "}
+                                        {item.paciente.esFlebitico ? "Sí" : "No"}
+                                    </p>
+                                    <p className="text-[11px] text-slate-500">
+                                        {item.razon}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+
+            return (
+                <div className="min-h-screen max-w-md mx-auto bg-slate-50 shadow-2xl">
+                    {/* HEADER */}
+                    <header className="bg-white border-b border-slate-200 sticky top-0 z-10 px-4 py-4 flex justify-between items-center shadow-sm">
+                        <div>
+                            <h1 className="text-xl font-black text-slate-900 tracking-tighter flex items-center gap-1">
+                                SCORE
+                                <span className="text-rbcyan">AV</span>
+                            </h1>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                Matriz decisional acceso vascular
+                            </p>
+                        </div>
+                        <div className="w-9 h-9 bg-rbcyan-light rounded-full flex items-center justify-center text-rbcyan-dark border border-rbcyan-light">
+                            <Icon name="stethoscope" size={18} />
+                        </div>
+                    </header>
+
+                    {/* MAIN */}
+                    <main className="p-4 pb-6">
+                        {vista === "formulario" && <Formulario />}
+                        {vista === "resultado" && <VistaResultado />}
+                        {vista === "historial" && <VistaHistorial />}
+                    </main>
+
+                    {/* FOOTER FIJO SIMPLE */}
+                    <footer
+                        className="fixed bottom-0 inset-x-0 max-w-md mx-auto bg-white border-t border-slate-200 px-4 py-2 flex items-center justify-between text-[10px] text-slate-400"
+                    >
+                        <span>APP Score AV · v3</span>
+                        <span>
+                            RBmind · Uso orientativo · No reemplaza juicio
+                            profesional
+                        </span>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById("root"));
+        root.render(<App />);
+    </script>
+</body>
+</html>
